@@ -80,9 +80,8 @@ async def forte_success(request: Request):
 
     order_id = request.query_params.get("ID") or request.query_params.get("id")
 
-    # если нет ID → ведём на приложение
     if not order_id:
-        return RedirectResponse("https://enoma.kz/discount-kz")
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     response = requests.get(
         f"{FORTE_API_URL}/order/{order_id}",
@@ -92,15 +91,14 @@ async def forte_success(request: Request):
     result = response.json()
     status = result.get("order", {}).get("status")
 
-    # если не оплачено → обратно в приложение
     if status not in ["FullyPaid", "Approved", "Deposited"]:
-        return RedirectResponse("https://enoma.kz/discount-kz")
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     order_ref = db.collection("forte_orders").document(order_id)
     order_doc = order_ref.get()
 
     if not order_doc.exists:
-        return RedirectResponse("https://enoma.kz/discount-kz")
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     order_data = order_doc.to_dict()
 
@@ -135,8 +133,7 @@ async def forte_success(request: Request):
             "paidAt": now
         })
 
-    # ================= РЕДИРЕКТ В ПРИЛОЖЕНИЕ =================
-    return RedirectResponse(f"https://enoma.kz/discount-kz?uid={uid}&paid=1")
+    return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}&paid=1")
 
 # ================= STATUS =================
 @app.get("/subscription-status")
@@ -145,14 +142,16 @@ def subscription_status(uid: str):
     user_ref = db.collection("users").document(uid)
     user_doc = user_ref.get()
 
+    # ❌ нет пользователя
     if not user_doc.exists:
-        return {"hasAccess": False, "remainingSeconds": 0}
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     data = user_doc.to_dict()
     expires_at = data.get("expiresAt")
 
+    # ❌ нет подписки
     if not expires_at:
-        return {"hasAccess": False, "remainingSeconds": 0}
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     if hasattr(expires_at, "tzinfo") and expires_at.tzinfo:
         expires_at = expires_at.replace(tzinfo=None)
@@ -160,8 +159,9 @@ def subscription_status(uid: str):
     now = datetime.utcnow()
     remaining = int((expires_at - now).total_seconds())
 
+    # ❌ подписка закончилась
     if remaining <= 0:
-        return {"hasAccess": False, "remainingSeconds": 0}
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     return {
         "hasAccess": True,
