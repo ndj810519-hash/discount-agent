@@ -47,7 +47,7 @@ async def create_forte_order(uid: str):
             "currency": "KZT",
             "description": f"{uid}|30days",
             "title": "30-day subscription",
-            "hppRedirectUrl": "https://discount-backend.onrender.com/forte-success"
+            "hppRedirectUrl": "https://discount-backend-edey.onrender.com/forte-success"
         }
     }
 
