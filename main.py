@@ -83,10 +83,8 @@ async def forte_success(request: Request):
     try:
         order_id = request.query_params.get("ID") or request.query_params.get("id")
 
-        print("ORDER ID:", order_id)
-
         if not order_id:
-            return RedirectResponse("http://enoma.kz/dis-auth")
+            return RedirectResponse("https://enoma.kz/dis-auth")
 
         response = requests.get(
             f"{FORTE_API_URL}/order/{order_id}",
@@ -94,19 +92,16 @@ async def forte_success(request: Request):
         )
 
         result = response.json()
-        print("FORTE RESPONSE:", result)
-
         status = result.get("order", {}).get("status")
 
-        # 🔥 расширенные статусы (чтобы не ломалось)
         if status not in ["FullyPaid", "Approved", "Deposited", "Authorized", "Created"]:
-            return RedirectResponse("http://enoma.kz/dis-auth")
+            return RedirectResponse("https://enoma.kz/dis-auth")
 
         order_ref = db.collection("forte_orders").document(order_id)
         order_doc = order_ref.get()
 
         if not order_doc.exists:
-            return RedirectResponse("http://enoma.kz/dis-auth")
+            return RedirectResponse("https://enoma.kz/dis-auth")
 
         order_data = order_doc.to_dict()
         uid = order_data["uid"]
@@ -114,7 +109,6 @@ async def forte_success(request: Request):
         now = datetime.utcnow()
         expires_at = now + timedelta(days=30)
 
-        # 🔥 записываем доступ
         db.collection("users").document(uid).set({
             "hasAccess": True,
             "expiresAt": expires_at,
@@ -126,12 +120,11 @@ async def forte_success(request: Request):
             "paidAt": now
         })
 
-        # 🔥 ВСЕГДА редирект в приложение
-        return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}&paid=1")
+        return RedirectResponse(f"https://enoma.kz/discount-kz?uid={uid}&paid=1")
 
     except Exception as e:
         print("ERROR:", e)
-        return RedirectResponse("http://enoma.kz/dis-auth")
+        return RedirectResponse("https://enoma.kz/dis-auth")
 
 
 # ================= STATUS =================
@@ -176,151 +169,11 @@ def root():
 def manifest():
     return FileResponse("manifest.json")
 
-@app.get("/icon-192.png")
-def icon_192():
-    return FileResponse("icon-192.png")
-
-@app.get("/icon-512.png")
-def icon_512():
-    return FileResponse("icon-512.png")
-
-# ================= CREATE ORDER =================
-@app.get("/create-forte-order")
-async def create_forte_order(uid: str):
-
-    payload = {
-        "order": {
-            "typeRid": "Order_RID",
-            "language": "ru",
-            "amount": "100.00",
-            "currency": "KZT",
-            "description": f"{uid}|30days",
-            "title": "30-day subscription",
-            "hppRedirectUrl": "https://discount-backend-edey.onrender.com/forte-success"
-        }
-    }
-
-    response = requests.post(
-        f"{FORTE_API_URL}/order",
-        json=payload,
-        auth=(FORTE_USERNAME, FORTE_PASSWORD),
-        headers={"Content-Type": "application/json"}
-    )
-
-    response.raise_for_status()
-
-    forte_response = response.json()
-
-    order_id = str(forte_response["order"]["id"])
-    password = forte_response["order"]["password"]
-    hpp_url = forte_response["order"]["hppUrl"]
-
-    db.collection("forte_orders").document(order_id).set({
-        "uid": uid,
-        "createdAt": datetime.utcnow(),
-        "isProcessed": False
-    })
-
-    return RedirectResponse(f"{hpp_url}?id={order_id}&password={password}")
-
-
-# ================= SUCCESS =================
-@app.get("/forte-success")
-async def forte_success(request: Request):
-
-    order_id = request.query_params.get("ID") or request.query_params.get("id")
-
-    if not order_id:
-        return RedirectResponse("http://enoma.kz/dis-auth")
-
-    response = requests.get(
-        f"{FORTE_API_URL}/order/{order_id}",
-        auth=(FORTE_USERNAME, FORTE_PASSWORD)
-    )
-
-    result = response.json()
-    status = result.get("order", {}).get("status")
-
-    if status not in ["FullyPaid", "Approved", "Deposited"]:
-        return RedirectResponse("http://enoma.kz/dis-auth")
-
-    order_ref = db.collection("forte_orders").document(order_id)
-    order_doc = order_ref.get()
-
-    if not order_doc.exists:
-        return RedirectResponse("http://enoma.kz/dis-auth")
-
-    order_data = order_doc.to_dict()
-
-    # 🔥 если уже обработан (как в рабочем)
-    if order_data.get("isProcessed"):
-        uid = order_data["uid"]
-        return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}")
-
-    uid = order_data["uid"]
-
-    now = datetime.utcnow()
-    expires_at = now + timedelta(days=30)
-
-    db.collection("users").document(uid).set({
-        "hasAccess": True,
-        "expiresAt": expires_at,
-        "lastPaymentAt": now
-    }, merge=True)
-
-    order_ref.update({
-        "isProcessed": True,
-        "paidAt": now
-    })
-
-    return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}&paid=1")
-
-
-# ================= STATUS =================
-@app.get("/subscription-status")
-def subscription_status(uid: str):
-
-    user_ref = db.collection("users").document(uid)
-    user_doc = user_ref.get()
-
-    if not user_doc.exists:
-        return {"hasAccess": False, "remainingSeconds": 0}
-
-    data = user_doc.to_dict()
-    expires_at = data.get("expiresAt")
-
-    if not expires_at:
-        return {"hasAccess": False, "remainingSeconds": 0}
-
-    if hasattr(expires_at, "tzinfo") and expires_at.tzinfo:
-        expires_at = expires_at.replace(tzinfo=None)
-
-    now = datetime.utcnow()
-    remaining = int((expires_at - now).total_seconds())
-
-    if remaining <= 0:
-        return {"hasAccess": False, "remainingSeconds": 0}
-
-    return {
-        "hasAccess": True,
-        "remainingSeconds": remaining
-    }
-
-
-# ================= ROOT =================
-@app.get("/")
-def root():
-    return {"server": "running"}
-
-
-# ================= STATIC =================
-@app.get("/manifest.json")
-def manifest():
-    return FileResponse("manifest.json")
 
 @app.get("/icon-192.png")
 def icon_192():
     return FileResponse("icon-192.png")
+
 
 @app.get("/icon-512.png")
 def icon_512():
