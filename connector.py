@@ -74,6 +74,7 @@ async def create_forte_order(uid: str):
 
     return RedirectResponse(f"{hpp_url}?id={order_id}&password={password}")
 
+
 # ================= SUCCESS =================
 @app.get("/forte-success")
 async def forte_success(request: Request):
@@ -101,39 +102,32 @@ async def forte_success(request: Request):
         return RedirectResponse("http://enoma.kz/dis-auth")
 
     order_data = order_doc.to_dict()
+
+    # 🔥 если уже обработан
+    if order_data.get("isProcessed"):
+        uid = order_data["uid"]
+        return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}")
+
     uid = order_data["uid"]
 
     now = datetime.utcnow()
 
-    user_ref = db.collection("users").document(uid)
-    user_doc = user_ref.get()
+    # 🔥 как в рабочем коде — просто ставим новую подписку
+    expires_at = now + timedelta(days=30)
 
-    # 🔥 ПРОДЛЕНИЕ ПОДПИСКИ
-    if user_doc.exists:
-        data = user_doc.to_dict()
-        current_expiry = data.get("expiresAt")
+    db.collection("users").document(uid).set({
+        "hasAccess": True,
+        "expiresAt": expires_at,
+        "lastPaymentAt": now
+    }, merge=True)
 
-        if current_expiry and current_expiry > now:
-            expires_at = current_expiry + timedelta(days=30)
-        else:
-            expires_at = now + timedelta(days=30)
-    else:
-        expires_at = now + timedelta(days=30)
-
-    # 🔥 защита от повторной обработки
-    if not order_data.get("isProcessed"):
-        user_ref.set({
-            "hasAccess": True,
-            "expiresAt": expires_at,
-            "lastPaymentAt": now
-        }, merge=True)
-
-        order_ref.update({
-            "isProcessed": True,
-            "paidAt": now
-        })
+    order_ref.update({
+        "isProcessed": True,
+        "paidAt": now
+    })
 
     return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}&paid=1")
+
 
 # ================= STATUS =================
 @app.get("/subscription-status")
@@ -165,10 +159,12 @@ def subscription_status(uid: str):
         "remainingSeconds": remaining
     }
 
+
 # ================= ROOT =================
 @app.get("/")
 def root():
     return {"server": "running"}
+
 
 # ================= STATIC =================
 @app.get("/manifest.json")
