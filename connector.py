@@ -81,14 +81,7 @@ async def forte_success(request: Request):
     order_id = request.query_params.get("ID") or request.query_params.get("id")
 
     if not order_id:
-        if not user_doc.exists:
-    return {"hasAccess": False, "remainingSeconds": 0}
-
-    if not expires_at:
-    return {"hasAccess": False, "remainingSeconds": 0}
-
-    if remaining <= 0:
-    return {"hasAccess": False, "remainingSeconds": 0}
+        return RedirectResponse("http://enoma.kz/dis-auth")
 
     response = requests.get(
         f"{FORTE_API_URL}/order/{order_id}",
@@ -108,14 +101,14 @@ async def forte_success(request: Request):
         return RedirectResponse("http://enoma.kz/dis-auth")
 
     order_data = order_doc.to_dict()
-
     uid = order_data["uid"]
+
     now = datetime.utcnow()
 
     user_ref = db.collection("users").document(uid)
     user_doc = user_ref.get()
 
-    # ================= ПРОДЛЕНИЕ =================
+    # 🔥 ПРОДЛЕНИЕ ПОДПИСКИ
     if user_doc.exists:
         data = user_doc.to_dict()
         current_expiry = data.get("expiresAt")
@@ -127,7 +120,7 @@ async def forte_success(request: Request):
     else:
         expires_at = now + timedelta(days=30)
 
-    # ================= ЗАЩИТА ОТ ДУБЛЕЙ =================
+    # 🔥 защита от повторной обработки
     if not order_data.get("isProcessed"):
         user_ref.set({
             "hasAccess": True,
@@ -149,16 +142,14 @@ def subscription_status(uid: str):
     user_ref = db.collection("users").document(uid)
     user_doc = user_ref.get()
 
-    # ❌ нет пользователя
     if not user_doc.exists:
-        return RedirectResponse("http://enoma.kz/dis-auth")
+        return {"hasAccess": False, "remainingSeconds": 0}
 
     data = user_doc.to_dict()
     expires_at = data.get("expiresAt")
 
-    # ❌ нет подписки
     if not expires_at:
-        return RedirectResponse("http://enoma.kz/dis-auth")
+        return {"hasAccess": False, "remainingSeconds": 0}
 
     if hasattr(expires_at, "tzinfo") and expires_at.tzinfo:
         expires_at = expires_at.replace(tzinfo=None)
@@ -166,14 +157,18 @@ def subscription_status(uid: str):
     now = datetime.utcnow()
     remaining = int((expires_at - now).total_seconds())
 
-    # ❌ подписка закончилась
     if remaining <= 0:
-        return RedirectResponse("http://enoma.kz/dis-auth")
+        return {"hasAccess": False, "remainingSeconds": 0}
 
     return {
         "hasAccess": True,
         "remainingSeconds": remaining
     }
+
+# ================= ROOT =================
+@app.get("/")
+def root():
+    return {"server": "running"}
 
 # ================= STATIC =================
 @app.get("/manifest.json")
