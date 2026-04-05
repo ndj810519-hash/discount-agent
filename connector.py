@@ -81,7 +81,14 @@ async def forte_success(request: Request):
     order_id = request.query_params.get("ID") or request.query_params.get("id")
 
     if not order_id:
-        return RedirectResponse("http://enoma.kz/dis-auth")
+        if not user_doc.exists:
+    return {"hasAccess": False, "remainingSeconds": 0}
+
+    if not expires_at:
+    return {"hasAccess": False, "remainingSeconds": 0}
+
+    if remaining <= 0:
+    return {"hasAccess": False, "remainingSeconds": 0}
 
     response = requests.get(
         f"{FORTE_API_URL}/order/{order_id}",
