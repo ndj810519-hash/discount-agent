@@ -35,6 +35,7 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
+
 # ================= CREATE ORDER =================
 @app.get("/create-forte-order")
 async def create_forte_order(uid: str):
@@ -103,7 +104,7 @@ async def forte_success(request: Request):
 
     order_data = order_doc.to_dict()
 
-    # 🔥 если уже обработан
+    # 🔥 если уже обработан (как в рабочем)
     if order_data.get("isProcessed"):
         uid = order_data["uid"]
         return RedirectResponse(f"http://enoma.kz/discount-astana?uid={uid}")
@@ -111,8 +112,6 @@ async def forte_success(request: Request):
     uid = order_data["uid"]
 
     now = datetime.utcnow()
-
-    # 🔥 как в рабочем коде — просто ставим новую подписку
     expires_at = now + timedelta(days=30)
 
     db.collection("users").document(uid).set({
